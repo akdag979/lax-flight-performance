@@ -31,6 +31,30 @@ STATUS_COLOR = {
     "On Ground": "#5588aa", "Cancelled": RED, "Diverted": RED,
 }
 
+# LAX terminal assignments by operating airline IATA code (as of 2025)
+LAX_TERMINAL = {
+    # Terminal 1 — budget domestic
+    "WN": "T1", "NK": "T1", "F9": "T1", "SY": "T1", "Y4": "T1",
+    # Terminal 2/3 — Delta hub
+    "DL": "T2/T3", "KE": "T2", "WS": "T2", "PD": "T2",
+    # Terminal 4 — American domestic
+    "AA": "T4",
+    # Terminal 5/6 — Alaska hub, American intl, JetBlue
+    "AS": "T5/T6", "QX": "T5", "OO": "T5", "B6": "T5",
+    # Terminal 7/8 — United hub
+    "UA": "T7/T8", "XE": "T7",
+    # Tom Bradley International Terminal
+    "AC": "TBIT", "QF": "TBIT", "BA": "TBIT", "CX": "TBIT",
+    "CI": "TBIT", "MU": "TBIT", "JL": "TBIT", "SQ": "TBIT",
+    "AY": "TBIT", "AF": "TBIT", "KL": "TBIT", "IB": "TBIT",
+    "AZ": "TBIT", "EI": "TBIT", "AT": "TBIT", "GF": "TBIT",
+    "FI": "TBIT", "LO": "TBIT", "NZ": "TBIT", "PR": "TBIT",
+    "MH": "TBIT", "AM": "TBIT", "LA": "TBIT", "CM": "TBIT",
+    "AV": "TBIT", "TP": "TBIT", "OS": "TBIT", "OZ": "TBIT",
+    "TN": "TBIT", "VS": "TBIT", "VA": "TBIT", "AD": "TBIT",
+    "KQ": "TBIT", "JU": "TBIT",
+}
+
 def pbase(**kw):
     d = dict(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
              font_color="white", title_font_color="white",
@@ -59,6 +83,7 @@ def load():
     for col in ["destinationAirportCode","destinationAirportName",
                 "destinationCountryCode","originAirportCode","weather"]:
         if col in df.columns: df[col] = df[col].fillna("Unknown")
+    df["terminal"] = df["operatingAirlineCode"].map(LAX_TERMINAL).fillna("Other")
     return df
 
 df_all = load()
@@ -91,7 +116,7 @@ worst_al  = df[df["delayed_f"]==1]["airlineCode"].mode()
 worst_al  = worst_al.iloc[0] if len(worst_al) else "—"
 
 # ══════════════════════════════════════════════════════════════════════════════
-tabs = st.tabs(["🖥️ Live Board","📊 Overview","✈️ Airline","🗺️ Routes"])
+tabs = st.tabs(["🖥️ Live Board","📊 Overview","✈️ Airline","🚪 Terminal","🗺️ Routes"])
 
 
 # ── TAB 0: BOARD ──────────────────────────────────────────────────────────────
@@ -256,8 +281,75 @@ with tabs[2]:
                  use_container_width=True, hide_index=True)
 
 
-# ── TAB 3: ROUTES ─────────────────────────────────────────────────────────────
+# ── TAB 3: TERMINAL ───────────────────────────────────────────────────────────
 with tabs[3]:
+    st.caption("Terminal assignments derived from LAX airline-to-terminal map (2025). "
+               "TBIT = Tom Bradley International Terminal.")
+    st.divider()
+
+    term_order = ["T1","T2/T3","T4","T5/T6","T7/T8","TBIT","Other"]
+
+    tm = df.groupby("terminal").agg(
+        flights=("flight","count"),
+        on_time_rate=("on_time","mean"),
+        delayed_n=("delayed_f","sum"),
+        avg_delay=("delay_mins", lambda x: x[x>0].mean()),
+    ).reset_index().fillna(0)
+    tm["avg_delay"] = tm["avg_delay"].round(1)
+    tm["terminal"] = pd.Categorical(tm["terminal"], categories=term_order, ordered=True)
+    tm = tm.sort_values("terminal")
+
+    col_l, col_r = st.columns(2)
+    with col_l:
+        fig_t = px.bar(tm, x="terminal", y="on_time_rate",
+                       color="on_time_rate",
+                       color_continuous_scale=[[0,AMBER],[0.6,TEAL],[1,TEAL]],
+                       text=tm["on_time_rate"].apply(lambda x: f"{x:.0%}"),
+                       labels={"on_time_rate":"On-Time Rate","terminal":"Terminal"},
+                       title="On-Time Rate by Terminal")
+        fig_t.update_traces(textposition="outside")
+        fig_t.update_yaxes(tickformat=".0%", range=[0,1.25])
+        fig_t.update_layout(**pbase(height=360, coloraxis_showscale=False))
+        st.plotly_chart(fig_t, use_container_width=True)
+
+    with col_r:
+        fig_tv = px.bar(tm, x="terminal", y="flights",
+                        color="avg_delay",
+                        color_continuous_scale=[[0,TEAL],[0.5,AMBER],[1,RED]],
+                        text="flights",
+                        labels={"flights":"Flights","terminal":"Terminal","avg_delay":"Avg Delay (min)"},
+                        title="Flight Volume by Terminal (colour = avg delay)")
+        fig_tv.update_traces(textposition="outside")
+        fig_tv.update_layout(**pbase(height=360))
+        fig_tv.update_coloraxes(colorbar=cbar())
+        st.plotly_chart(fig_tv, use_container_width=True)
+
+    # Terminal × Hour heatmap
+    th = df.groupby(["terminal","sched_hour"]).size().reset_index(name="flights")
+    if not th.empty:
+        pv_th = th.pivot(index="terminal", columns="sched_hour", values="flights").fillna(0)
+        pv_th = pv_th.reindex([t for t in term_order if t in pv_th.index])
+        fig_hm = px.imshow(pv_th,
+                           color_continuous_scale=[[0,"#0a1628"],[1,TEAL]],
+                           aspect="auto",
+                           labels={"x":"Hour of Day","y":"Terminal","color":"Flights"},
+                           title="Terminal × Hour — Flight Volume Heatmap")
+        fig_hm.update_layout(**pbase(height=320))
+        fig_hm.update_coloraxes(colorbar=cbar())
+        st.plotly_chart(fig_hm, use_container_width=True)
+
+    # Summary table
+    tm_d = tm.copy()
+    tm_d["on_time_rate"] = tm_d["on_time_rate"].apply(lambda x: f"{x:.1%}")
+    tm_d["avg_delay"]    = tm_d["avg_delay"].apply(lambda x: f"{x:.1f} min")
+    st.dataframe(tm_d.rename(columns={
+        "terminal":"Terminal","flights":"Flights",
+        "on_time_rate":"On-Time Rate","delayed_n":"Delayed","avg_delay":"Avg Delay"
+    }), use_container_width=True, hide_index=True)
+
+
+# ── TAB 4: ROUTES ─────────────────────────────────────────────────────────────
+with tabs[4]:
     c_rt, _ = st.columns([1,3])
     route_type = c_rt.radio("View", ["Departures","Arrivals"], horizontal=True)
 
