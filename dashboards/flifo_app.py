@@ -67,6 +67,16 @@ def cbar(fmt=None):
     if fmt: cb["tickformat"] = fmt
     return cb
 
+def lax_hhmm(s):
+    """Format UTC datetime Series as LAX local time HH:MM — pure integer math, no OS tz calls."""
+    mask = s.notna()
+    h = ((s.dt.hour - 7) % 24).astype(object)
+    m = s.dt.minute.astype(object)
+    out = pd.Series("—", index=s.index, dtype=object)
+    out[mask] = (h[mask].astype(str).str.zfill(2) + ":" +
+                 m[mask].astype(str).str.zfill(2))
+    return out
+
 
 # ── Load & Enrich ─────────────────────────────────────────────────────────────
 @st.cache_data
@@ -85,7 +95,7 @@ def load():
                         "Departed","Enroute","On Ground"}
     df["on_time"]   = df["statusText"].isin(on_time_statuses).astype(int)
     df["delayed_f"] = (df["statusText"] == "Delayed").astype(int)
-    df["sched_hour"]= (df["scheduledTime_dt"] - pd.Timedelta(hours=7)).dt.hour
+    df["sched_hour"]= (df["scheduledTime_dt"].dt.hour - 7) % 24
 
     df["bodyType"]  = df["aircraftIata"].apply(body_type)
     df["airlineName"] = df["airlineName"].fillna(df["airlineCode"])
@@ -146,10 +156,8 @@ with tabs[0]:
     if b_stat != "ALL": bd = bd[bd["statusText"] == b_stat]
     bd = bd.sort_values("scheduledTime_dt", na_position="last")
 
-    bd["Sched"]  = (bd["scheduledTime_dt"] - pd.Timedelta(hours=7)) \
-                     .dt.strftime("%H:%M").fillna("—")
-    bd["Actual"] = (bd["actualTime_dt"] - pd.Timedelta(hours=7)) \
-                     .dt.strftime("%H:%M").fillna("—")
+    bd["Sched"]  = lax_hhmm(bd["scheduledTime_dt"])
+    bd["Actual"] = lax_hhmm(bd["actualTime_dt"])
     bd["Delay+"] = bd["delay_mins"].apply(
         lambda x: f"+{int(x)}m" if pd.notna(x) and x > 5 else
                   (f"{int(x)}m" if pd.notna(x) and x < -2 else ""))
