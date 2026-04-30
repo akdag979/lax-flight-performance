@@ -50,7 +50,7 @@ REGIONAL   = {"E170","E175","E190","E195","E7W","E290","CRJ7","CRJ9","CRJX",
               "CRJ1","CRJ2","DH8D","AT72","AT73","AT75","AT76","SF34"}
 
 def body_type(iata_code):
-    code = (iata_code or "").upper()
+    code = ("" if pd.isna(iata_code) else str(iata_code)).upper()
     if code in WIDE_BODY:  return "Wide-body"
     if code in REGIONAL:   return "Regional"
     return "Narrow-body"
