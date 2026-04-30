@@ -49,11 +49,13 @@ WIDE_BODY  = {"B772","B773","B77L","B77W","B788","B789","B78X","B763","B764",
 REGIONAL   = {"E170","E175","E190","E195","E7W","E290","CRJ7","CRJ9","CRJX",
               "CRJ1","CRJ2","DH8D","AT72","AT73","AT75","AT76","SF34"}
 
-def body_type(iata_code):
-    code = ("" if pd.isna(iata_code) else str(iata_code)).upper()
-    if code in WIDE_BODY:  return "Wide-body"
-    if code in REGIONAL:   return "Regional"
-    return "Narrow-body"
+def _classify_body(series):
+    """Vectorised body-type classification — avoids PyArrow scalar issues."""
+    codes = series.astype(str).str.upper().str.strip()
+    result = pd.Series("Narrow-body", index=series.index, dtype=object)
+    result[codes.isin(REGIONAL)]   = "Regional"
+    result[codes.isin(WIDE_BODY)]  = "Wide-body"
+    return result
 
 def pbase(**kw):
     d = dict(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
@@ -97,15 +99,16 @@ def load():
     df["delayed_f"] = (df["statusText"] == "Delayed").astype(int)
     df["sched_hour"]= (df["scheduledTime_dt"].dt.hour - 7) % 24
 
-    df["bodyType"]  = df["aircraftIata"].apply(body_type)
+    df["bodyType"]  = _classify_body(df["aircraftIata"])
     df["airlineName"] = df["airlineName"].fillna(df["airlineCode"])
     df["statusText"]  = df["statusText"].fillna("Unknown")
     df["otherCity"]   = df["otherCity"].fillna(df["otherAirport"])
 
-    # Clean terminal — map "0" and "" to "Unknown", keep TBIT as-is
-    df["terminal"] = df["terminal"].astype(str).replace({"0": "", "nan": ""})
-    df["terminal"] = df["terminal"].apply(
-        lambda x: "T" + x if x.isdigit() and x != "0" else x if x else "Unknown")
+    # Clean terminal — vectorised, no apply() to avoid PyArrow scalar issues
+    t = df["terminal"].astype(str).replace({"0": "", "nan": "", "None": ""})
+    is_digit = t.str.match(r"^\d+$", na=False)
+    t = t.where(~is_digit, "T" + t)
+    df["terminal"] = t.replace("", "Unknown").fillna("Unknown")
 
     df["duration"] = pd.to_numeric(df["duration"], errors="coerce")
     return df
