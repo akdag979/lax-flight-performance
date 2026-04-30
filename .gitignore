@@ -1,0 +1,20 @@
+# Credentials — never commit
+.env
+*.env
+secrets.*
+
+# Large raw data files
+data/*.json
+data/flights_*.csv
+
+# Keep the latest sample
+!data/flights_latest.csv
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.Python
+
+# macOS
+.DS_Store
