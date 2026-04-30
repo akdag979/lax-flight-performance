@@ -85,7 +85,7 @@ def load():
                         "Departed","Enroute","On Ground"}
     df["on_time"]   = df["statusText"].isin(on_time_statuses).astype(int)
     df["delayed_f"] = (df["statusText"] == "Delayed").astype(int)
-    df["sched_hour"]= df["scheduledTime_dt"].dt.tz_convert("America/Los_Angeles").dt.hour
+    df["sched_hour"]= (df["scheduledTime_dt"] - pd.Timedelta(hours=7)).dt.hour
 
     df["bodyType"]  = df["aircraftIata"].apply(body_type)
     df["airlineName"] = df["airlineName"].fillna(df["airlineCode"])
@@ -146,9 +146,9 @@ with tabs[0]:
     if b_stat != "ALL": bd = bd[bd["statusText"] == b_stat]
     bd = bd.sort_values("scheduledTime_dt", na_position="last")
 
-    bd["Sched"]  = bd["scheduledTime_dt"].dt.tz_convert("America/Los_Angeles") \
+    bd["Sched"]  = (bd["scheduledTime_dt"] - pd.Timedelta(hours=7)) \
                      .dt.strftime("%H:%M").fillna("—")
-    bd["Actual"] = bd["actualTime_dt"].dt.tz_convert("America/Los_Angeles") \
+    bd["Actual"] = (bd["actualTime_dt"] - pd.Timedelta(hours=7)) \
                      .dt.strftime("%H:%M").fillna("—")
     bd["Delay+"] = bd["delay_mins"].apply(
         lambda x: f"+{int(x)}m" if pd.notna(x) and x > 5 else
@@ -225,7 +225,7 @@ with tabs[1]:
                        name="Avg Delay", line=dict(color=AMBER, width=2.5),
                        mode="lines+markers")
         fh.update_layout(**pbase(
-            title="Delay by Hour of Day (LAX local time)", height=300,
+            title="Delay by Hour of Day (LAX time (PDT, UTC-7))", height=300,
             yaxis=dict(title="Avg Delay (min)", color=AMBER),
             yaxis2=dict(title="Flights", overlaying="y", side="right", color=TEAL),
             xaxis=dict(title="Hour", dtick=2),
@@ -455,7 +455,7 @@ with tabs[4]:
                            color_continuous_scale=[[0,"#0a1628"],[1,TEAL]],
                            aspect="auto",
                            labels={"x":"Hour of Day","y":"Terminal","color":"Flights"},
-                           title="Terminal × Hour — Flight Volume Heatmap (LAX local time)")
+                           title="Terminal × Hour — Flight Volume Heatmap (LAX time (PDT, UTC-7))")
         fig_hm.update_layout(**pbase(height=340))
         fig_hm.update_coloraxes(colorbar=cbar())
         st.plotly_chart(fig_hm, use_container_width=True)
